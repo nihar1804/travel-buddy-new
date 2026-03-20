@@ -1,0 +1,182 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required)
+    //   - displayName: string (optional)
+    //   - email: string (required, email format)
+    //   - preferences: map (optional)
+    //   - createdAt: timestamp (optional)
+    //
+    // Collection: trips
+    // Document ID: {tripId}
+    // Fields:
+    //   - userId: string (required)
+    //   - source: string (required)
+    //   - destination: string (required)
+    //   - duration: number (required)
+    //   - budget: number (required)
+    //   - travelStyle: string (required)
+    //   - dayWiseItinerary: list (required)
+    //   - scenicStops: list (optional)
+    //   - foodRecommendations: list (optional)
+    //   - estimatedCostBreakdown: map (optional)
+    //   - travelTips: list (optional)
+    //   - bestTimeToVisit: string (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: bookings
+    // Document ID: {bookingId}
+    // Fields:
+    //   - userId: string (required)
+    //   - name: string (required, < 100 chars)
+    //   - email: string (required, email format)
+    //   - checkIn: string (required, YYYY-MM-DD)
+    //   - checkOut: string (required, YYYY-MM-DD)
+    //   - destination: string (required)
+    //   - status: string (required, enum: pending, confirmed, cancelled)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: expenses
+    // Document ID: {expenseId}
+    // Fields:
+    //   - userId: string (required)
+    //   - tripId: string (required)
+    //   - category: string (required, enum: fuel, hotel, food, misc)
+    //   - amount: number (required)
+    //   - name: string (required)
+    //   - reason: string (optional)
+    //   - date: string (required, ISO 8601)
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "rniharranjansahoo@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}.*$");
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function uidUnchanged() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == resource.data.userId;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.uid is string && data.uid.size() > 0 &&
+             data.email is string && isValidEmail(data.email) &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100));
+    }
+
+    function isValidTrip(data) {
+      return data.userId is string &&
+             data.source is string && data.source.size() < 100 &&
+             data.destination is string && data.destination.size() < 100 &&
+             data.budget is number && data.budget >= 0 &&
+             data.duration is number &&
+             data.travelStyle is string &&
+             data.dayWiseItinerary is list &&
+             (!('scenicStops' in data) || data.scenicStops is list) &&
+             (!('foodRecommendations' in data) || data.foodRecommendations is list) &&
+             (!('estimatedCostBreakdown' in data) || data.estimatedCostBreakdown is map) &&
+             (!('travelTips' in data) || data.travelTips is list) &&
+             (!('bestTimeToVisit' in data) || data.bestTimeToVisit is string);
+    }
+
+    function isValidBooking(data) {
+      return data.userId is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.checkIn is string && isValidDateString(data.checkIn) &&
+             data.checkOut is string && isValidDateString(data.checkOut) &&
+             data.destination is string &&
+             data.status in ['pending', 'confirmed', 'cancelled'];
+    }
+
+    function isValidExpense(data) {
+      return data.userId is string &&
+             data.tripId is string && data.tripId.size() > 0 &&
+             data.category in ['fuel', 'hotel', 'food', 'misc'] &&
+             data.amount is number && data.amount >= 0 &&
+             data.date is string &&
+             data.name is string && data.name.size() > 0 &&
+             (!('reason' in data) || data.reason is string);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid) && isValidUser(request.resource.data) && (!('role' in request.resource.data) || request.resource.data.role == 'user');
+      allow update: if (isOwner(uid) && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role) || isAdmin();
+    }
+
+    match /trips/{tripId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidTrip(request.resource.data) && uidUnchanged();
+      allow update: if (isDocOwner() && isValidTrip(request.resource.data) && uidNotModified()) || isAdmin();
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidBooking(request.resource.data) && uidUnchanged();
+      allow update: if (isDocOwner() && isValidBooking(request.resource.data) && uidNotModified()) || isAdmin();
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidExpense(request.resource.data) && uidUnchanged();
+      allow update: if (isDocOwner() && isValidExpense(request.resource.data) && uidNotModified()) || isAdmin();
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    // Default deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

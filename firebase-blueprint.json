@@ -1,0 +1,111 @@
+{
+  "entities": {
+    "user": {
+      "title": "User Profile",
+      "description": "Stores user preferences and profile information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "preferences": {
+          "type": "object",
+          "properties": {
+            "budget": { "type": "string", "enum": ["budget", "mid-range", "luxury"] },
+            "travelStyle": { "type": "string", "enum": ["bike", "train", "car", "bus"] }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "trip": {
+      "title": "Trip Itinerary",
+      "description": "Stores AI-generated trip itineraries.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "source": { "type": "string" },
+        "destination": { "type": "string" },
+        "duration": { "type": "number" },
+        "budget": { "type": "number" },
+        "travelStyle": { "type": "string" },
+        "dayWiseItinerary": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "day": { "type": "string" },
+              "activities": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "scenicStops": { "type": "array", "items": { "type": "string" } },
+        "foodRecommendations": { "type": "array", "items": { "type": "string" } },
+        "estimatedCostBreakdown": {
+          "type": "object",
+          "properties": {
+            "transport": { "type": "number" },
+            "hotel": { "type": "number" },
+            "food": { "type": "number" },
+            "total": { "type": "number" }
+          }
+        },
+        "bestTimeToVisit": { "type": "string" },
+        "travelTips": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "source", "destination", "dayWiseItinerary"]
+    },
+    "booking": {
+      "title": "Booking Request",
+      "description": "Stores travel booking requests.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "checkIn": { "type": "string", "format": "date" },
+        "checkOut": { "type": "string", "format": "date" },
+        "destination": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "email", "checkIn", "checkOut"]
+    },
+    "expense": {
+      "title": "Trip Expense",
+      "description": "Stores individual trip expenses for budget tracking.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "tripId": { "type": "string" },
+        "category": { "type": "string", "enum": ["fuel", "hotel", "food", "misc"] },
+        "amount": { "type": "number" },
+        "name": { "type": "string" },
+        "reason": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "tripId", "category", "amount", "name", "reason"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "user",
+      "description": "User profile documents."
+    },
+    "/trips/{tripId}": {
+      "schema": "trip",
+      "description": "Saved trip itineraries."
+    },
+    "/bookings/{bookingId}": {
+      "schema": "booking",
+      "description": "Booking requests."
+    },
+    "/expenses/{expenseId}": {
+      "schema": "expense",
+      "description": "User trip expenses."
+    }
+  }
+}

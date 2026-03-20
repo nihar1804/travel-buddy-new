@@ -1,0 +1,7 @@
+{
+  "name": "Copy of TravelBuddy",
+  "description": "AI-powered travel planner for explorers. Get smart itineraries, budget estimates, and scenic routes.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
