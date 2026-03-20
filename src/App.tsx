@@ -27,7 +27,16 @@ import {
 } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import { 
+  onAuthStateChanged, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signOut,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
+  signInAnonymously
+} from 'firebase/auth';
 import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, setDoc, getDoc } from 'firebase/firestore';
 import { AlertTriangle } from 'lucide-react';
 import { generateTripItinerary, generateBudgetInsights } from './services/geminiService';
@@ -144,31 +153,214 @@ const MOCK_HOTELS = [
 
 // --- Components ---
 
-const LoginScreen = ({ onLogin }: { onLogin: () => void }) => (
-  <div className="min-h-screen flex items-center justify-center bg-stone-50 dark:bg-slate-950 p-6 transition-colors duration-300">
-    <motion.div 
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="max-w-md w-full bg-white dark:bg-slate-900 p-10 rounded-3xl shadow-2xl border border-stone-200 dark:border-slate-800 text-center"
-    >
-      <div className="w-16 h-16 bg-emerald-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-8 shadow-lg">
-        <Compass size={32} />
-      </div>
-      <h1 className="text-3xl font-bold text-stone-900 dark:text-white mb-2">Welcome to TravelBuddy</h1>
-      <p className="text-stone-600 dark:text-slate-400 mb-10">Your AI-powered companion for exploring the beauty of the world.</p>
-      
-      <button 
-        onClick={onLogin}
-        className="w-full flex items-center justify-center gap-3 bg-white dark:bg-slate-800 border-2 border-stone-200 dark:border-slate-700 py-4 rounded-2xl font-bold text-stone-700 dark:text-slate-200 hover:bg-stone-50 dark:hover:bg-slate-700 transition-all shadow-sm"
+const LoginScreen = ({ onLogin }: { onLogin: (user?: any) => void }) => {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setError(null);
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+      // onAuthStateChanged in App.tsx will handle the rest
+    } catch (err: any) {
+      console.error("Google Login Error:", err);
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError("Login cancelled. Please try again.");
+      } else if (err.code === 'auth/cancelled-popup-request') {
+        setError("Login request was cancelled.");
+      } else {
+        setError(err.message || "Failed to login with Google.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    try {
+      if (isSignUp) {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(userCredential.user, { displayName: name });
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err: any) {
+      console.error("Email Auth Error:", err);
+      switch (err.code) {
+        case 'auth/user-not-found':
+          setError("No user found with this email.");
+          break;
+        case 'auth/wrong-password':
+          setError("Invalid password.");
+          break;
+        case 'auth/email-already-in-use':
+          setError("Email already in use.");
+          break;
+        case 'auth/weak-password':
+          setError("Password is too weak.");
+          break;
+        case 'auth/invalid-email':
+          setError("Invalid email address.");
+          break;
+        default:
+          setError(err.message || "Authentication failed.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await signInAnonymously(auth);
+    } catch (err: any) {
+      setError("Failed to login as guest.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-stone-50 dark:bg-slate-950 p-6 transition-colors duration-300">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-md w-full bg-white dark:bg-slate-900 p-8 md:p-10 rounded-3xl shadow-2xl border border-stone-200 dark:border-slate-800 text-center"
       >
-        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-6 h-6" />
-        Continue with Google
-      </button>
-      
-      <p className="mt-8 text-xs text-stone-400">By continuing, you agree to our Terms of Service and Privacy Policy.</p>
-    </motion.div>
-  </div>
-);
+        <div className="w-16 h-16 bg-emerald-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
+          <Compass size={32} />
+        </div>
+        
+        <h1 className="text-3xl font-bold text-stone-900 dark:text-white mb-2">
+          {isSignUp ? 'Create Account' : 'Welcome Back'}
+        </h1>
+        <p className="text-stone-600 dark:text-slate-400 mb-8">
+          {isSignUp ? 'Join TravelBuddy to start planning your trips.' : 'Login to access your saved itineraries.'}
+        </p>
+
+        {/* Toggle Login/SignUp */}
+        <div className="flex bg-stone-100 dark:bg-slate-800 p-1 rounded-xl mb-8">
+          <button 
+            onClick={() => setIsSignUp(false)}
+            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${!isSignUp ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-stone-500 dark:text-slate-500'}`}
+          >
+            Login
+          </button>
+          <button 
+            onClick={() => setIsSignUp(true)}
+            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${isSignUp ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-stone-500 dark:text-slate-500'}`}
+          >
+            Sign Up
+          </button>
+        </div>
+
+        {error && (
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 rounded-xl text-red-600 dark:text-red-400 text-sm flex items-center gap-3"
+          >
+            <AlertTriangle size={18} className="shrink-0" />
+            <p className="text-left">{error}</p>
+          </motion.div>
+        )}
+
+        <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
+          {isSignUp && (
+            <div className="relative">
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="Full Name" 
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 rounded-xl border border-stone-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-stone-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                required={isSignUp}
+              />
+            </div>
+          )}
+          <div className="relative">
+            <Send className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 rotate-45" size={18} />
+            <input 
+              type="email" 
+              placeholder="Email Address" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 rounded-xl border border-stone-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-stone-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+              required
+            />
+          </div>
+          <div className="relative">
+            <X className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+            <input 
+              type="password" 
+              placeholder="Password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 rounded-xl border border-stone-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-stone-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+              required
+            />
+          </div>
+          <button 
+            type="submit"
+            disabled={loading}
+            className="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {loading ? (
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              isSignUp ? 'Create Account' : 'Login'
+            )}
+          </button>
+        </form>
+
+        <div className="relative mb-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-stone-200 dark:border-slate-800"></div>
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-white dark:bg-slate-900 px-4 text-stone-400 dark:text-slate-500 font-bold">Or continue with</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mb-8">
+          <button 
+            onClick={handleGoogleLogin}
+            disabled={loading}
+            className="flex items-center justify-center gap-3 bg-white dark:bg-slate-800 border border-stone-200 dark:border-slate-700 py-3 rounded-xl font-bold text-stone-700 dark:text-slate-200 hover:bg-stone-50 dark:hover:bg-slate-700 transition-all shadow-sm disabled:opacity-50"
+          >
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+            Google
+          </button>
+          <button 
+            onClick={handleGuestLogin}
+            disabled={loading}
+            className="flex items-center justify-center gap-3 bg-white dark:bg-slate-800 border border-stone-200 dark:border-slate-700 py-3 rounded-xl font-bold text-stone-700 dark:text-slate-200 hover:bg-stone-50 dark:hover:bg-slate-700 transition-all shadow-sm disabled:opacity-50"
+          >
+            <User size={18} className="text-stone-400" />
+            Guest
+          </button>
+        </div>
+        
+        <p className="text-xs text-stone-400 dark:text-slate-500">
+          By continuing, you agree to our <span className="underline cursor-pointer">Terms of Service</span> and <span className="underline cursor-pointer">Privacy Policy</span>.
+        </p>
+      </motion.div>
+    </div>
+  );
+};
 
 const Navbar = ({ user, onLogout, currentView, setView, theme, toggleTheme }: { user: any, onLogout: () => void, currentView: string, setView: (v: string) => void, theme: string, toggleTheme: () => void }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -219,7 +411,13 @@ const Navbar = ({ user, onLogout, currentView, setView, theme, toggleTheme }: { 
               onClick={() => setShowProfile(!showProfile)}
               className="flex items-center gap-2 p-1 pr-3 rounded-full border border-stone-200 dark:border-slate-700 hover:bg-stone-50 dark:hover:bg-slate-800 transition-all"
             >
-              <img src={user.photoURL} alt={user.displayName} className="w-8 h-8 rounded-full" />
+              {user.photoURL ? (
+                <img src={user.photoURL} alt={user.displayName || 'User'} className="w-8 h-8 rounded-full" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <User size={16} />
+                </div>
+              )}
               <Menu size={18} className="text-stone-500" />
             </button>
             
@@ -232,8 +430,8 @@ const Navbar = ({ user, onLogout, currentView, setView, theme, toggleTheme }: { 
                   className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-stone-100 dark:border-slate-800 p-2"
                 >
                   <div className="p-3 border-b border-stone-100 dark:border-slate-800 mb-2">
-                    <p className="font-bold text-stone-900 dark:text-white truncate">{user.displayName}</p>
-                    <p className="text-xs text-stone-500 dark:text-slate-400 truncate">{user.email}</p>
+                    <p className="font-bold text-stone-900 dark:text-white truncate">{user.displayName || (user.isAnonymous ? 'Guest User' : 'Traveler')}</p>
+                    <p className="text-xs text-stone-500 dark:text-slate-400 truncate">{user.email || 'Anonymous Session'}</p>
                   </div>
                   <button 
                     onClick={onLogout}
@@ -1221,9 +1419,10 @@ export default function App() {
           if (!userSnap.exists()) {
             await setDoc(userRef, {
               uid: u.uid,
-              displayName: u.displayName,
-              email: u.email,
-              photoURL: u.photoURL,
+              displayName: u.displayName || (u.isAnonymous ? 'Guest User' : 'Traveler'),
+              email: u.email || null,
+              photoURL: u.photoURL || null,
+              isAnonymous: u.isAnonymous,
               role: 'user', // Default role
               createdAt: serverTimestamp()
             });
@@ -1284,7 +1483,7 @@ export default function App() {
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-stone-50 dark:bg-slate-950 transition-colors duration-300"><div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" /></div>;
-  if (!user) return <LoginScreen onLogin={handleLogin} />;
+  if (!user) return <LoginScreen onLogin={() => {}} />;
 
   return (
     <ErrorBoundary>
